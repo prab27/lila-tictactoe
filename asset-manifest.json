@@ -1,0 +1,13 @@
+{
+  "files": {
+    "main.css": "/lila-tictactoe/static/css/main.81d817c2.css",
+    "main.js": "/lila-tictactoe/static/js/main.49312fd3.js",
+    "index.html": "/lila-tictactoe/index.html",
+    "main.81d817c2.css.map": "/lila-tictactoe/static/css/main.81d817c2.css.map",
+    "main.49312fd3.js.map": "/lila-tictactoe/static/js/main.49312fd3.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.81d817c2.css",
+    "static/js/main.49312fd3.js"
+  ]
+}
