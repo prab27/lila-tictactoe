@@ -393,19 +393,45 @@ const rpcFindMatch: nkruntime.RpcFunction = function(ctx, logger, nk, payload) {
   }
 
   const timedMode = mode === "timed";
-  const query = "+label.open:T +label.timedMode:" + timedMode;
+
+  // List all authoritative matches with exactly 1 player (waiting for opponent)
+  // Bleve booleans are indexed as T/F — so use T for true, F for false
+  const timedStr = timedMode ? "T" : "F";
+  const query = "+label.open:T +label.timedMode:" + timedStr;
 
   let matches: nkruntime.Match[] = [];
   try {
-    matches = nk.matchList(10, true, null, null, 1, query);
+    // minSize=1, maxSize=1 means: matches that have exactly 1 player right now
+    matches = nk.matchList(10, true, null, 1, 1, query);
+    logger.info("matchList query='%v' found %v matches", query, matches.length);
   } catch (e) {
     logger.warn("Match list error: %v", e);
+  }
+
+  // Fallback: try without query if none found (catches any open match regardless of mode)
+  if (matches.length === 0) {
+    try {
+      const allOpen = nk.matchList(10, true, null, 1, 1, "");
+      // Filter by mode label manually
+      for (let i = 0; i < allOpen.length; i++) {
+        try {
+          const lbl = JSON.parse(allOpen[i].label || "{}");
+          if (lbl.open === true && lbl.timedMode === timedMode) {
+            matches.push(allOpen[i]);
+            break;
+          }
+        } catch (e) {}
+      }
+      logger.info("Fallback matchList found %v matches", matches.length);
+    } catch (e) {
+      logger.warn("Fallback match list error: %v", e);
+    }
   }
 
   let matchId: string;
   if (matches.length > 0) {
     matchId = matches[0].matchId;
-    logger.info("Found existing match %v", matchId);
+    logger.info("Found existing match %v for mode=%v", matchId, mode);
   } else {
     matchId = nk.matchCreate("tictactoe", { mode: mode });
     logger.info("Created new match %v (mode=%v)", matchId, mode);
@@ -445,6 +471,18 @@ const InitModule: nkruntime.InitModule = function(ctx, logger, nk, initializer) 
     matchLoop: matchLoop,
     matchTerminate: matchTerminate,
     matchSignal: matchSignal,
+  });
+
+  // Register matchmaker matched handler — creates authoritative match when 2 players pair
+  initializer.registerMatchmakerMatched(function(ctx, logger, nk, matches) {
+    let mode = "classic";
+    if (matches && matches.length > 0 && matches[0].properties) {
+      const m = matches[0].properties["mode"];
+      if (m) mode = m;
+    }
+    const matchId = nk.matchCreate("tictactoe", { mode: mode });
+    logger.info("Matchmaker created match %v (mode=%v)", matchId, mode);
+    return matchId;
   });
 
   // Register RPC functions
