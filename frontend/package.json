@@ -2,6 +2,7 @@
   "name": "lila-tictactoe-frontend",
   "version": "1.0.0",
   "private": true,
+  "homepage": "/lila-tictactoe",
   "dependencies": {
     "@heroiclabs/nakama-js": "^2.9.1",
     "react": "^18.2.0",
