@@ -401,8 +401,9 @@ const rpcFindMatch: nkruntime.RpcFunction = function(ctx, logger, nk, payload) {
 
   let matches: nkruntime.Match[] = [];
   try {
-    // minSize=1, maxSize=1 means: matches that have exactly 1 player right now
-    matches = nk.matchList(10, true, null, 1, 1, query);
+    // minSize=0, maxSize=1: matches with 0 or 1 players (open, waiting for opponent)
+    // Player 1 joins via socket AFTER the RPC returns, so size may be 0 when Player 2 calls find_match
+    matches = nk.matchList(10, true, null, 0, 1, query);
     logger.info("matchList query='%v' found %v matches", query, matches.length);
   } catch (e) {
     logger.warn("Match list error: %v", e);
@@ -411,7 +412,7 @@ const rpcFindMatch: nkruntime.RpcFunction = function(ctx, logger, nk, payload) {
   // Fallback: try without query if none found (catches any open match regardless of mode)
   if (matches.length === 0) {
     try {
-      const allOpen = nk.matchList(10, true, null, 1, 1, "");
+      const allOpen = nk.matchList(10, true, null, 0, 1, "");
       // Filter by mode label manually
       for (let i = 0; i < allOpen.length; i++) {
         try {
