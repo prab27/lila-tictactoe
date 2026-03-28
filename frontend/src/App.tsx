@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { Client, Session, Socket } from '@heroiclabs/nakama-js';
 import Login from './components/Login';
 import Menu from './components/Menu';
@@ -11,7 +11,7 @@ import './App.css';
 const NAKAMA_HOST = process.env.REACT_APP_NAKAMA_HOST || 'localhost';
 const NAKAMA_PORT = process.env.REACT_APP_NAKAMA_PORT || '7350';
 const NAKAMA_USE_SSL = process.env.REACT_APP_NAKAMA_SSL === 'true';
-const NAKAMA_KEY = process.env.REACT_APP_NAKAMA_KEY || 'defaultkey';
+const NAKAMA_KEY  = process.env.REACT_APP_NAKAMA_KEY  || 'defaultkey';
 
 const defaultGameState: GameState = {
   board: ['', '', '', '', '', '', '', '', ''],
@@ -24,24 +24,25 @@ const defaultGameState: GameState = {
 };
 
 export default function App() {
-  const [screen, setScreen] = useState<Screen>('login');
-  const [loginError, setLoginError] = useState('');
+  const [screen, setScreen]           = useState<Screen>('login');
+  const [loginError, setLoginError]   = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
   const [menuLoading, setMenuLoading] = useState(false);
-  const [gameMode, setGameMode] = useState<GameMode>('classic');
+  const [gameMode, setGameMode]       = useState<GameMode>('classic');
 
-  const [myUserId, setMyUserId] = useState('');
+  const [myUserId, setMyUserId]     = useState('');
   const [myUsername, setMyUsername] = useState('');
-  const [mySymbol, setMySymbol] = useState('X');
-  const [matchId, setMatchId] = useState('');
+  const [mySymbol, setMySymbol]     = useState('X');
+  const [matchId, setMatchId]       = useState('');
 
-  const [gameState, setGameState] = useState<GameState>(defaultGameState);
+  const [gameState, setGameState]     = useState<GameState>(defaultGameState);
   const [gameOverData, setGameOverData] = useState<GameOverData | null>(null);
   const [timerSeconds, setTimerSeconds] = useState(30);
 
-  const clientRef = useRef<Client | null>(null);
+  const clientRef  = useRef<Client | null>(null);
   const sessionRef = useRef<Session | null>(null);
-  const socketRef = useRef<Socket | null>(null);
+  const socketRef  = useRef<Socket | null>(null);
+  const matchIdRef = useRef('');
 
   const getClient = useCallback(() => {
     if (!clientRef.current) {
@@ -50,7 +51,7 @@ export default function App() {
     return clientRef.current;
   }, []);
 
-  // Authenticate user with Nakama
+  // ── Auth ──────────────────────────────────────────────────────────
   const handleLogin = useCallback(async (username: string) => {
     setLoginLoading(true);
     setLoginError('');
@@ -63,74 +64,74 @@ export default function App() {
       }
 
       const session = await client.authenticateDevice(deviceId, true, username);
-      await client.updateAccount(session, { displayName: username });
+      // update display name (snake_case field)
+      await client.updateAccount(session, { display_name: username });
       sessionRef.current = session;
       setMyUserId(session.user_id || '');
       setMyUsername(username);
 
-      // Connect socket
+      // Connect WebSocket
       const socket = client.createSocket(NAKAMA_USE_SSL, false);
+      socket.ondisconnect = () => {};   // handle silently
       await socket.connect(session, true);
       socketRef.current = socket;
 
       setScreen('menu');
     } catch (err: any) {
-      setLoginError(err?.message || 'Connection failed. Check Nakama server.');
+      setLoginError(err?.message || 'Connection failed. Is the server running?');
     } finally {
       setLoginLoading(false);
     }
   }, [getClient]);
 
-  // Find or create match
+  // ── Find / join match ─────────────────────────────────────────────
   const handleFindMatch = useCallback(async (mode: GameMode) => {
     setMenuLoading(true);
     setGameMode(mode);
-    try {
-      const client = getClient();
-      const session = sessionRef.current;
-      if (!session) throw new Error('Not authenticated');
+    const socket  = socketRef.current;
+    const session = sessionRef.current;
+    const client  = getClient();
+    if (!socket || !session) { setMenuLoading(false); return; }
 
-      const result = await client.rpcGet(session, 'find_match', JSON.stringify({ mode }));
-      const data = JSON.parse(result.payload as string);
-      const foundMatchId: string = data.matchId;
+    try {
+      // RPC returns payload as a parsed object already
+      const result = await client.rpc(session, 'find_match', { mode });
+      const data   = result.payload as { matchId: string; mode: string };
+      const foundMatchId = data.matchId;
 
       setMatchId(foundMatchId);
+      matchIdRef.current = foundMatchId;
       setScreen('matchmaking');
       setGameState({ ...defaultGameState, timedMode: mode === 'timed' });
 
-      // Join the match via socket
-      const socket = socketRef.current;
-      if (!socket) throw new Error('Socket not connected');
-
-      // Register socket handlers
+      // ── Socket handlers ──────────────────────────────────────────
       socket.onmatchdata = (matchData) => {
         const opCode = matchData.op_code;
         let payload: any = {};
         try {
-          if (matchData.data) {
-            const text = new TextDecoder().decode(matchData.data as ArrayBuffer);
-            payload = JSON.parse(text);
+          if (matchData.data && matchData.data.length > 0) {
+            payload = JSON.parse(new TextDecoder().decode(matchData.data));
           }
-        } catch (e) {}
+        } catch (e) { console.warn('Parse error', e); }
 
         if (opCode === OpCode.MATCH_READY) {
-          // Match started, stay in matchmaking until GAME_STATE
+          // wait for GAME_STATE
         } else if (opCode === OpCode.GAME_STATE) {
-          setGameState(payload as GameState);
-          setTimerSeconds(payload.timeRemaining || 30);
+          const gs = payload as GameState;
+          setGameState(gs);
+          setTimerSeconds(gs.timeRemaining || 30);
           setScreen('game');
-
-          // Determine my symbol
-          const me = (payload as GameState).players?.find((p: any) => p.userId === session.user_id);
+          // determine my symbol
+          const me = gs.players?.find((p: any) => p.userId === session.user_id);
           if (me) setMySymbol(me.symbol);
         } else if (opCode === OpCode.TIMER_UPDATE) {
-          setTimerSeconds(payload.timeRemaining || 0);
+          setTimerSeconds(payload.timeRemaining ?? 0);
         } else if (opCode === OpCode.GAME_OVER) {
           setGameOverData(payload as GameOverData);
           setScreen('gameover');
         } else if (opCode === OpCode.OPPONENT_LEFT) {
           setGameOverData({
-            board: gameState.board,
+            board: [],
             winner: payload.winner,
             winnerSymbol: payload.winnerSymbol,
             winnerName: payload.winnerName,
@@ -149,75 +150,69 @@ export default function App() {
       await socket.joinMatch(foundMatchId);
     } catch (err: any) {
       console.error('Find match error:', err);
-      setMenuLoading(false);
-      setScreen('menu');
       alert('Failed to find match: ' + (err?.message || 'Unknown error'));
+      setScreen('menu');
     } finally {
       setMenuLoading(false);
     }
-  }, [getClient, gameState.board]);
+  }, [getClient]);
 
-  // Send move to server
+  // ── Send move ─────────────────────────────────────────────────────
   const handleMove = useCallback((position: number) => {
     const socket = socketRef.current;
-    if (!socket || !matchId) return;
-
+    const mid    = matchIdRef.current;
+    if (!socket || !mid) return;
     const data = new TextEncoder().encode(JSON.stringify({ position }));
-    socket.sendMatchState(matchId, OpCode.MAKE_MOVE, data);
-  }, [matchId]);
+    socket.sendMatchState(mid, OpCode.MAKE_MOVE, data);
+  }, []);
 
-  // Cancel matchmaking
+  // ── Cancel matchmaking ────────────────────────────────────────────
   const handleCancel = useCallback(async () => {
     const socket = socketRef.current;
-    if (socket && matchId) {
-      try {
-        await socket.leaveMatch(matchId);
-      } catch (e) {}
+    const mid    = matchIdRef.current;
+    if (socket && mid) {
+      try { await socket.leaveMatch(mid); } catch (e) {}
     }
+    matchIdRef.current = '';
     setMatchId('');
     setScreen('menu');
-  }, [matchId]);
+  }, []);
 
-  // Play again - go back to menu
+  // ── Play again ────────────────────────────────────────────────────
   const handlePlayAgain = useCallback(async () => {
     const socket = socketRef.current;
-    if (socket && matchId) {
-      try {
-        await socket.leaveMatch(matchId);
-      } catch (e) {}
+    const mid    = matchIdRef.current;
+    if (socket && mid) {
+      try { await socket.leaveMatch(mid); } catch (e) {}
     }
+    matchIdRef.current = '';
     setMatchId('');
     setGameState(defaultGameState);
     setGameOverData(null);
     setScreen('menu');
-  }, [matchId]);
+  }, []);
 
-  // Fetch leaderboard
+  // ── Leaderboard ───────────────────────────────────────────────────
   const fetchLeaderboard = useCallback(async (): Promise<LeaderboardEntry[]> => {
     try {
-      const client = getClient();
+      const client  = getClient();
       const session = sessionRef.current;
       if (!session) return [];
-      const result = await client.rpcGet(session, 'get_leaderboard', undefined);
-      const data = JSON.parse(result.payload as string);
-      return data.records || [];
+      const result = await client.rpc(session, 'get_leaderboard', {});
+      const data   = result.payload as { records: LeaderboardEntry[] };
+      return data?.records || [];
     } catch (e) {
       return [];
     }
   }, [getClient]);
 
+  // ── Render ────────────────────────────────────────────────────────
   return (
     <div className="app">
-      {screen === 'login' && (
-        <Login onLogin={handleLogin} error={loginError} loading={loginLoading} />
-      )}
-      {screen === 'menu' && (
-        <Menu username={myUsername} onFindMatch={handleFindMatch} loading={menuLoading} />
-      )}
-      {screen === 'matchmaking' && (
-        <Matchmaking onCancel={handleCancel} mode={gameMode} />
-      )}
-      {screen === 'game' && (
+      {screen === 'login'      && <Login onLogin={handleLogin} error={loginError} loading={loginLoading} />}
+      {screen === 'menu'       && <Menu  username={myUsername} onFindMatch={handleFindMatch} loading={menuLoading} />}
+      {screen === 'matchmaking'&& <Matchmaking onCancel={handleCancel} mode={gameMode} />}
+      {screen === 'game'       && (
         <Game
           gameState={gameState}
           myUserId={myUserId}
