@@ -1,14 +1,11 @@
 {
+  "files": ["./src/main.ts"],
   "compilerOptions": {
     "target": "es5",
-    "lib": ["es5", "es2015.promise", "es2015.symbol", "es2015.iterable", "es2015.collection"],
+    "typeRoots": ["./node_modules"],
+    "outFile": "./build/index.js",
     "strict": false,
-    "outDir": "./build",
-    "rootDir": "./src",
-    "noImplicitAny": false,
     "esModuleInterop": true,
     "skipLibCheck": true
-  },
-  "exclude": ["node_modules"],
-  "include": ["src/**/*"]
+  }
 }

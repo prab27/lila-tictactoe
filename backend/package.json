@@ -2,12 +2,15 @@
   "name": "lila-tictactoe-backend",
   "version": "1.0.0",
   "description": "Nakama TypeScript backend for multiplayer Tic-Tac-Toe",
+  "main": "build/index.js",
   "scripts": {
     "build": "npx tsc",
     "watch": "npx tsc --watch"
   },
+  "dependencies": {
+    "nakama-runtime": "github:heroiclabs/nakama-common#master"
+  },
   "devDependencies": {
-    "@heroiclabs/nakama-runtime": "^3.21.0",
-    "typescript": "^5.0.0"
+    "typescript": "^4.9.0"
   }
 }

@@ -166,7 +166,10 @@ const matchLeave: nkruntime.MatchLeaveFunction = function(ctx, logger, nk, dispa
 
     if (state.phase === "playing") {
       // Other player wins by forfeit
-      const remainingSessionId = state.playerOrder.find(sid => sid !== presence.sessionId);
+      let remainingSessionId: string | undefined;
+      for (let i = 0; i < state.playerOrder.length; i++) {
+        if (state.playerOrder[i] !== presence.sessionId) { remainingSessionId = state.playerOrder[i]; break; }
+      }
       if (remainingSessionId && state.players[remainingSessionId]) {
         const winner = state.players[remainingSessionId];
         state.winner = winner.userId;
@@ -337,7 +340,8 @@ const matchLoop: nkruntime.MatchLoopFunction = function(ctx, logger, nk, dispatc
       state.phase = "game_over";
 
       const gameOverMsg = buildGameOverMsg(state);
-      dispatcher.broadcastMessage(OpCode.GAME_OVER, JSON.stringify(Object.assign({}, gameOverMsg, { reason: "timeout" })), null, null, true);
+      const timeoutMsg = { board: (gameOverMsg as any).board, winner: (gameOverMsg as any).winner, winnerSymbol: (gameOverMsg as any).winnerSymbol, winnerName: (gameOverMsg as any).winnerName, isDraw: (gameOverMsg as any).isDraw, phase: (gameOverMsg as any).phase, reason: "timeout" };
+      dispatcher.broadcastMessage(OpCode.GAME_OVER, JSON.stringify(timeoutMsg), null, null, true);
 
       if (winner) {
         try {
@@ -450,7 +454,7 @@ const InitModule: nkruntime.InitModule = function(ctx, logger, nk, initializer) 
 
   // Create leaderboard (ignore if already exists)
   try {
-    nk.leaderboardCreate(LEADERBOARD_WINS_ID, false, nkruntime.SortOrder.DESCENDING, nkruntime.Operator.INCREMENT, nkruntime.ResetSchedule.NEVER, {});
+    nk.leaderboardCreate(LEADERBOARD_WINS_ID, false, nkruntime.SortOrder.DESCENDING, nkruntime.Operator.INCREMENTAL, "0 0 * * 1 *", {});
   } catch (e) {
     logger.info("Leaderboard already exists or error: %v", e);
   }
