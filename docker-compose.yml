@@ -1,0 +1,58 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:14-alpine
+    container_name: lila_postgres
+    environment:
+      POSTGRES_DB: nakama
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: localdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  nakama:
+    image: registry.heroiclabs.com/heroiclabs/nakama:3.21.1
+    container_name: lila_nakama
+    entrypoint:
+      - "/bin/sh"
+      - "-ecx"
+      - >
+        /nakama/nakama migrate up
+        --database.address postgres:localdb@postgres/nakama &&
+        exec /nakama/nakama
+        --name nakama1
+        --database.address postgres:localdb@postgres/nakama
+        --logger.level DEBUG
+        --session.token_expiry_sec 7200
+        --runtime.js_entrypoint "build/index.js"
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    links:
+      - "postgres:db"
+    volumes:
+      - ./backend:/nakama/data/modules
+    ports:
+      - "7349:7349"  # Internal (gRPC)
+      - "7350:7350"  # HTTP API
+      - "7351:7351"  # Console
+    environment:
+      - NAKAMA_RUNTIME_JS_MIN_COUNT=1
+      - NAKAMA_RUNTIME_JS_MAX_COUNT=8
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7350/healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
