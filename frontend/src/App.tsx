@@ -46,7 +46,7 @@ export default function App() {
 
   const getClient = useCallback(() => {
     if (!clientRef.current) {
-      clientRef.current = new Client(NAKAMA_KEY, NAKAMA_HOST, NAKAMA_PORT, NAKAMA_USE_SSL, 7000, false);
+      clientRef.current = new Client(NAKAMA_KEY, NAKAMA_HOST, NAKAMA_PORT, NAKAMA_USE_SSL, 60000, false);
     }
     return clientRef.current;
   }, []);
@@ -78,7 +78,8 @@ export default function App() {
 
       setScreen('menu');
     } catch (err: any) {
-      setLoginError(err?.message || 'Connection failed. Is the server running?');
+      const msg = err?.message || (typeof err === 'string' ? err : null) || err?.statusText || `HTTP ${err?.status}` || 'Connection failed';
+      setLoginError(msg);
     } finally {
       setLoginLoading(false);
     }
@@ -94,6 +95,9 @@ export default function App() {
     if (!socket || !session) { setMenuLoading(false); return; }
 
     try {
+      // Wakeup ping first in case Railway is cold-starting
+      try { await fetch(`https://${NAKAMA_HOST}/healthcheck`); } catch (_) {}
+
       // RPC returns payload as a parsed object already
       const result = await client.rpc(session, 'find_match', { mode });
       const data   = result.payload as { matchId: string; mode: string };
@@ -150,7 +154,8 @@ export default function App() {
       await socket.joinMatch(foundMatchId);
     } catch (err: any) {
       console.error('Find match error:', err);
-      alert('Failed to find match: ' + (err?.message || 'Unknown error'));
+      const msg = err?.message || (typeof err === 'string' ? err : null) || err?.statusText || (err?.status ? `HTTP ${err.status}` : null) || JSON.stringify(err) || 'Unknown error';
+      alert('Failed to find match: ' + msg);
       setScreen('menu');
     } finally {
       setMenuLoading(false);
